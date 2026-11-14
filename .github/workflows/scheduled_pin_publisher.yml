@@ -1,0 +1,55 @@
+name: "Scheduled Pinterest POD Pin Publisher"
+
+on:
+  schedule:
+    # Run every 3 hours around the clock
+    - cron: "0 */3 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Force publish next pending pin immediately"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  publish-pin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install System Dependencies & Playwright
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright requests pillow
+          playwright install --with-deps chromium
+
+      - name: Execute Scheduled Pin Publisher
+        env:
+          PINTEREST_ACCESS_TOKEN: ${{ secrets.PINTEREST_ACCESS_TOKEN }}
+          ZAZZLE_ASSOCIATE_ID: ${{ secrets.ZAZZLE_ASSOCIATE_ID || '238209628121657582' }}
+        run: |
+          if [ "${{ inputs.force }}" = "true" ]; then
+            python publish_scheduled_pin.py --force
+          else
+            python publish_scheduled_pin.py
+          fi
+
+      - name: Commit & Push Updated Schedule State
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add publishing_schedule.json zazzle_renders/ || true
+          git diff --staged --quiet || git commit -m "Auto: Update publishing schedule [skip ci]"
+          git push origin main || true
